@@ -6,6 +6,7 @@ AppName=GoogleDrivePlugin
 AppVerName=0.1
 DefaultDirName={userappdata}\Autodesk\ApplicationPlugins\GoogleDrivePlugin.bundle
 PrivilegesRequired=lowest
+OutputBaseFilename=GoogleDrivePlugin
 
 [Files]
 Source: "PackageContents.xml"; DestDir: "{userappdata}\Autodesk\ApplicationPlugins\GoogleDrivePlugin.bundle"
