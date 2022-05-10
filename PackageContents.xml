@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ApplicationPackage SchemaVersion="1.0" AppVersion="1.0"
+    ProductCode="c47bd691-b074-4e6a-9950-37109c45b06b"
+    Name="Google Drive Plugin"
+>
+	<CompanyDetails
+	  Name="Ecogy Energy"
+	  Email=""
+	/>
+
+	<Components>
+		<ComponentEntry
+		  ModuleName="./Contents/GoogleDrivePlugin.dll"
+    />
+	</Components>
+</ApplicationPackage>
