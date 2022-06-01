@@ -12,15 +12,15 @@ using System.IO;
 using System;
 
 // This line is not mandatory, but improves loading performances
-[assembly: CommandClass(typeof(GoogleDrivePlugin.MyCommands))]
+[assembly: CommandClass(typeof(Ecogy.Commands))]
 
-namespace GoogleDrivePlugin
+namespace Ecogy
 {
     // This class is instantiated by AutoCAD for each document when
     // a command is called by the user the first time in the context
     // of a given document. In other words, non static data in this class
     // is implicitly per-document!
-    public class MyCommands
+    public class Commands
     {
         private static readonly string REG_KEY_NAME = "Google Drive";
         private static readonly string REG_KEY_DEPTH = "Google Drive Depth";
