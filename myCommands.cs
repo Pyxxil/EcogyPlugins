@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.IO;
+using System;
 
 // This line is not mandatory, but improves loading performances
 [assembly: CommandClass(typeof(GoogleDrivePlugin.MyCommands))]
@@ -30,7 +31,7 @@ namespace GoogleDrivePlugin
 
         private static readonly Regex rgx = new Regex(@"PlacesOrder\d$", RegexOptions.Compiled);
 
-        public static void AddGoogleDrive()
+        public static void GoogleDrive()
         {
             var path = dialogs.GetValue(REG_KEY_NAME).ToString();
             var depth = (int)dialogs.GetValue(REG_KEY_DEPTH);
@@ -92,7 +93,7 @@ namespace GoogleDrivePlugin
 
         // Modal Command with localized name
         [CommandMethod("Ecogy", "AddGoogleDrive", CommandFlags.Modal)]
-        public void MyCommand() // This method can have any name
+        public void AddGoogleDrive() // This method can have any name
         {
             // Put your command code here
             Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -144,6 +145,90 @@ namespace GoogleDrivePlugin
                 dialogs.SetValue(REG_KEY_DEPTH, depth);
 
                 AddGoogleDrive();
+            }
+        }
+
+        static void Import(string path)
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            if (doc != null)
+            {
+                if (File.GetAttributes(path).HasFlag(FileAttributes.Directory))
+                {
+                    foreach (var file in Directory.GetFiles(path))
+                    {
+                        Import(file);
+                    }
+                }
+                else
+                {
+                    var db = doc.Database;
+                    using (var transaction = doc.Database.TransactionManager.StartTransaction())
+                    {
+                        DBDictionary nod = (DBDictionary)transaction.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
+
+                        string defDictKey = UnderlayDefinition.GetDictionaryKey(typeof(PdfDefinition));
+                        if (!nod.Contains(defDictKey))
+                        {
+                            using (DBDictionary dict = new DBDictionary())
+                            {
+                                nod.SetAt(defDictKey, dict);
+                                transaction.AddNewlyCreatedDBObject(dict, true);
+                            }
+                        }
+
+                        ObjectId idPdfDef;
+                        DBDictionary pdfDict = (DBDictionary)transaction.GetObject(nod.GetAt(defDictKey), OpenMode.ForWrite);
+
+                        using (PdfDefinition pdfDef = new PdfDefinition())
+                        {
+                            pdfDef.SourceFileName = path;
+                            idPdfDef = pdfDict.SetAt(Path.GetFileNameWithoutExtension(path), pdfDef);
+                            transaction.AddNewlyCreatedDBObject(pdfDef, true);
+                        }
+
+                        BlockTable bt = (BlockTable)transaction.GetObject(db.BlockTableId, OpenMode.ForRead);
+
+                        BlockTableRecord btr = (BlockTableRecord)transaction.GetObject(
+                            bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite
+                        );
+
+                        using (PdfReference pdf = new PdfReference())
+                        {
+                            pdf.DefinitionId = idPdfDef;
+                            btr.AppendEntity(pdf);
+                            transaction.AddNewlyCreatedDBObject(pdf, true);
+                        }
+
+                        transaction.Commit();
+                    }
+                }
+            }
+        }
+
+        // Modal Command with localized name
+        [CommandMethod("Ecogy", "ImportSpecSheet", CommandFlags.Modal)]
+        public void ImportSpecSheet()
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            if (doc != null)
+            {
+                var flags = Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.DoNotTransferRemoteFiles |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.DefaultIsFolder |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.ForceDefaultFolder |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.AllowMultiple |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.AllowAnyExtension;
+
+                var ofd = new Autodesk.AutoCAD.Windows.OpenFileDialog("Select Spec Sheet(s)", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "*", "Select Spec Sheet(s)", flags);
+
+                var dr = ofd.ShowDialog();
+                if (dr == System.Windows.Forms.DialogResult.OK)
+                {
+                    foreach (var file in ofd.GetFilenames())
+                    {
+                        Import(file);
+                    }
+                }
             }
         }
     }

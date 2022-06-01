@@ -39,7 +39,7 @@ namespace GoogleDrivePlugin
 
         private void Application_EnterModal(object sender, System.EventArgs e)
         {
-            MyCommands.AddGoogleDrive();
+            MyCommands.GoogleDrive();
         }
 
         void IExtensionApplication.Terminate()
