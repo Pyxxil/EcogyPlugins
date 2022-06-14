@@ -7,6 +7,8 @@ AppVerName=0.2
 DefaultDirName={userappdata}\Autodesk\ApplicationPlugins\EcogyPlugins.bundle
 PrivilegesRequired=lowest
 OutputBaseFilename=EcogyPlugins
+Uninstallable=yes
+CreateUninstallRegKey=yes
 
 [Files]
 Source: "PackageContents.xml"; DestDir: "{userappdata}\Autodesk\ApplicationPlugins\EcogyPlugins.bundle"
