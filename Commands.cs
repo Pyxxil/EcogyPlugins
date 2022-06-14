@@ -1,6 +1,4 @@
-﻿// (C) Copyright 2022 by  
-//
-using Autodesk.AutoCAD.ApplicationServices;
+﻿using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -58,7 +56,7 @@ namespace Ecogy
                 if (rgx.IsMatch(key)) count++;
 
                 // It's already in there, overwrite it
-                if (dialogs.GetValue(key).ToString() == path) break;
+                if (dialogs.GetValue(key).ToString() == REG_KEY_NAME) break;
             }
 
             // AutoCad occasionally puts an empty key in

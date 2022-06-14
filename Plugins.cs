@@ -1,6 +1,4 @@
-﻿// (C) Copyright 2022 by  
-//
-using Autodesk.AutoCAD.Runtime;
+﻿using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.ApplicationServices;
 
 // This line is not mandatory, but improves loading performances
