@@ -6,6 +6,10 @@ Ecogy team.
 Currently, the best way to install is using the provided Installer, which can be found under the releases tab.
 This will install the plugin into your Personal AutoCAD folder, and should be autoloaded on your next launch of AutoCAD.
 
+## Uninstallation
+
+You can uninstall the plugin in the normal Windows fashion: through the Apps and Featurs uninstall option. The program is under "Ecogy Plugins".
+
 ## Google Drive Plugin
 
 This is an AutoCAD plugin that allows you to add a Google Drive path to your Places list.
@@ -24,7 +28,6 @@ and whenever you click on it it will drop you in that folder. This folder does n
 
 Every project you open will change this path, but the base path and the depth will remain the same -- you can simply rerun
 `AddGoogleDrive` if you would like to change the values.
-
 
 ## Spec Sheet Plugin
 
