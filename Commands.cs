@@ -91,39 +91,29 @@ namespace Ecogy
 
         // Modal Command with localized name
         [CommandMethod("Ecogy", "AddGoogleDrive", CommandFlags.Modal)]
-        public void AddGoogleDrive() // This method can have any name
+        public void AddGoogleDrive()
         {
-            // Put your command code here
-            Document doc = Application.DocumentManager.MdiActiveDocument;
+            var doc = Application.DocumentManager.MdiActiveDocument;
             if (doc != null)
             {
                 var ed = doc.Editor;
 
-                var pathPrompt = new PromptStringOptions("\nWhat's the google drive path? ")
-                {
-                    AllowSpaces = true
-                };
+                var flags = Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.DoNotTransferRemoteFiles |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.DefaultIsFolder |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.ForceDefaultFolder |
+                    Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.AllowFoldersOnly;
 
-                var pathResponse = ed.GetString(pathPrompt);
-                var path = pathResponse.StringResult;
+                var ofd = new Autodesk.AutoCAD.Windows.OpenFileDialog("Select Google Drive Path", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "*", "Select Spec Sheet(s)", flags);
+                var dr = ofd.ShowDialog();
 
-                var attrs = File.GetAttributes(path);
-                switch (attrs)
+                string path;
+                if (dr == System.Windows.Forms.DialogResult.OK)
                 {
-                    case FileAttributes.Directory:
-                        if (!Directory.Exists(path))
-                        {
-                            ed.WriteMessage($"Invalid Path {path}");
-                            return;
-                        }
-                        break;
-                    default:
-                        if (!File.Exists(path))
-                        {
-                            ed.WriteMessage($"Invalid Path {path}");
-                            return;
-                        }
-                        break;
+                    path = ofd.Filename;
+                }
+                else
+                {
+                    return;
                 }
 
                 dialogs.SetValue(REG_KEY_NAME, path);
