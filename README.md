@@ -29,7 +29,7 @@ and whenever you click on it it will drop you in that folder. This folder does n
 Every project you open will change this path, but the base path and the depth will remain the same -- you can simply rerun
 `AddGoogleDrive` if you would like to change the values.
 
-## Spec Sheet Plugin
+## Spec Sheet Plugin (Note: Currently does not work)
 
 This is an AutoCAD plugin that allows you to import any PDF documents to use as Spec Sheets.
 
@@ -38,7 +38,7 @@ This is an AutoCAD plugin that allows you to import any PDF documents to use as 
 Simply run the `ImportSpecSheet` command in the AutoCAD command line. A file selection dialog will appear, select all PDF
 files you would like to import, and they will be added to the project.
 
-## Filleting Plugin
+## Filleting Plugin (Note: Currently does not work)
 
 This is an AutoCAD plugin that will fillet all Polylines in a drawing.
 
