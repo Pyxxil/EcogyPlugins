@@ -37,7 +37,14 @@ namespace Ecogy
 
         private void Application_EnterModal(object sender, System.EventArgs e)
         {
-            Commands.GoogleDrive();
+            try
+            {
+                // Commands.GoogleDrive();
+            }
+            finally
+            {
+                // Basically ignore this for now, as it's most likely they just haven't run the command
+            }
         }
 
         void IExtensionApplication.Terminate()

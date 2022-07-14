@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Linq;
 using System.IO;
 using System;
+using Autodesk.AutoCAD.Geometry;
 
 // This line is not mandatory, but improves loading performances
 [assembly: CommandClass(typeof(Ecogy.Commands))]
@@ -79,17 +80,6 @@ namespace Ecogy
             return places;
         }
 
-        // The CommandMethod attribute can be applied to any public  member 
-        // function of any public class.
-        // The function should take no arguments and return nothing.
-        // If the method is an intance member then the enclosing class is 
-        // intantiated for each document. If the member is a static member then
-        // the enclosing class is NOT intantiated.
-        //
-        // NOTE: CommandMethod has overloads where you can provide helpid and
-        // context menu.
-
-        // Modal Command with localized name
         [CommandMethod("Ecogy", "AddGoogleDrive", CommandFlags.Modal)]
         public void AddGoogleDrive()
         {
@@ -132,7 +122,7 @@ namespace Ecogy
 
                 dialogs.SetValue(REG_KEY_DEPTH, depth);
 
-                AddGoogleDrive();
+                GoogleDrive();
             }
         }
 
@@ -194,7 +184,6 @@ namespace Ecogy
             }
         }
 
-        // Modal Command with localized name
         [CommandMethod("Ecogy", "ImportSpecSheet", CommandFlags.Modal)]
         public void ImportSpecSheet()
         {
@@ -216,6 +205,120 @@ namespace Ecogy
                     {
                         Import(file);
                     }
+                }
+            }
+        }
+
+        private static bool Clockwise(Point2d p1, Point2d p2, Point2d p3)
+        {
+            return ((p2.X - p1.X) * (p3.Y - p1.Y) - (p2.Y - p1.Y) * (p3.X - p1.X)) < 1e-8;
+        }
+
+        public static int Fillet(Polyline line, int index, double radius)
+        {
+            int prev = index == 0 && line.Closed ? line.NumberOfVertices - 1 : index - 1;
+            if (line.GetSegmentType(prev) != SegmentType.Line ||
+                line.GetSegmentType(index) != SegmentType.Line)
+            {
+                Application.DocumentManager.MdiActiveDocument.Editor.WriteMessage("One or both are not lines\n");
+                return 0;
+            }
+
+            LineSegment2d seg1 = line.GetLineSegment2dAt(prev);
+            LineSegment2d seg2 = line.GetLineSegment2dAt(index);
+            Vector2d vec1 = seg1.StartPoint - seg1.EndPoint;
+            Vector2d vec2 = seg2.EndPoint - seg2.StartPoint;
+
+            double angle = (Math.PI - vec1.GetAngleTo(vec2)) / 2.0;
+            double dist = radius * Math.Tan(angle);
+            if (dist == 0.0 || dist > seg1.Length || dist > seg2.Length)
+            {
+                Application.DocumentManager.MdiActiveDocument.Editor.WriteMessage("Distance issue\n");
+                return 0;
+            }
+
+            Point2d pt1 = seg1.EndPoint + vec1.GetNormal() * dist;
+            Point2d pt2 = seg2.StartPoint + vec2.GetNormal() * dist;
+            double bulge = Math.Tan(angle / 2.0);
+
+            if (Clockwise(seg1.StartPoint, seg1.EndPoint, seg2.EndPoint))
+            {
+                bulge = -bulge;
+            }
+
+            line.AddVertexAt(index, pt1, bulge, 0.0, 0.0);
+            line.SetPointAt(index + 1, pt2);
+
+            return 1;
+        }
+
+        public static void FilletAll(Polyline pline, double radius)
+        {
+            int n = pline.Closed ? 0 : 1;
+            for (int i = n; i < pline.NumberOfVertices - n; i += 1 + Fillet(pline, i, radius))
+            { }
+        }
+
+        [CommandMethod("Ecogy", "FilletAll", CommandFlags.Modal)]
+        [Obsolete]
+        public void FilletAll()
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+
+            if (doc != null)
+            {
+                var editor = doc.Editor;
+
+                var valueSelector = new TypedValue[] {
+                        new TypedValue(Convert.ToInt32(DxfCode.Operator), "<and"),
+                        // new TypedValue(Convert.ToInt32(DxfCode.LayerName), layer.Name),
+                        new TypedValue(Convert.ToInt32(DxfCode.Operator), "<or"),
+                        new TypedValue(Convert.ToInt32(DxfCode.Start), "POLYLINE"),
+                        // new TypedValue(Convert.ToInt32(DxfCode.Start), "LWPOLYLINE"),
+                        new TypedValue(Convert.ToInt32(DxfCode.Start), "POLYLINE2D"),
+                        // new TypedValue(Convert.ToInt32(DxfCode.Start), "POLYLINE3d"),
+                        new TypedValue(Convert.ToInt32(DxfCode.Operator), "or>"),
+                        new TypedValue(Convert.ToInt32(DxfCode.Operator), "and>")
+                    };
+
+                SelectionFilter selectionFilter = new SelectionFilter(valueSelector);
+
+                var selection = editor.SelectAll(selectionFilter);
+
+                ObjectIdCollection polylineIDCollection;
+                if (selection.Status == PromptStatus.OK)
+                {
+                    polylineIDCollection = new ObjectIdCollection(selection.Value.GetObjectIds());
+                }
+                else
+                {
+                    polylineIDCollection = new ObjectIdCollection();
+                }
+
+                using (var transcation = doc.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in polylineIDCollection)
+                    {
+                        using (var obj = id.Open(OpenMode.ForRead))
+                        {
+                            if (obj is Polyline line)
+                            {
+                                FilletAll(line, 0.2);
+                            }
+                            else if (obj is Polyline2d poly2d)
+                            {
+                                poly2d.UpgradeOpen();
+
+                                using (var poly = new Polyline())
+                                {
+                                    poly.ConvertFrom(poly2d, true);
+                                    FilletAll(poly, 0.2);
+                                }
+                            }
+                        }
+                    }
+
+                    transcation.Commit();
                 }
             }
         }
