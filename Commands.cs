@@ -29,8 +29,13 @@ namespace Ecogy
 
         private static readonly Regex rgx = new Regex(@"PlacesOrder\d$", RegexOptions.Compiled);
 
+        private static int SpecSheetCount = 0;
+
         public static void GoogleDrive()
         {
+            if (dialogs.GetValue(REG_KEY_NAME) == null)
+                return;
+
             var path = dialogs.GetValue(REG_KEY_NAME).ToString();
             var depth = (int)dialogs.GetValue(REG_KEY_DEPTH);
 
@@ -44,7 +49,7 @@ namespace Ecogy
                 pathPostfix = new DirectoryInfo(documentPath).Name + @"\" + pathPostfix;
             }
 
-            string directory = $@"{path}\{pathPostfix}";
+            var directory = $@"{path}\{pathPostfix}";
             if (!Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
@@ -53,11 +58,13 @@ namespace Ecogy
             var count = 0;
             foreach (var key in dialogs.GetValueNames())
             {
-                if (rgx.IsMatch(key)) count++;
-
                 // It's already in there, overwrite it
                 if (dialogs.GetValue(key).ToString() == REG_KEY_NAME) break;
+
+                if (rgx.IsMatch(key)) count++;
             }
+
+            doc.Editor.WriteMessage("Values: {}", string.Join(", ", dialogs.GetValueNames()));
 
             // AutoCad occasionally puts an empty key in
             if (rgx.IsMatch($"PlacesOrder{count}") && !dialogs.GetValueNames().Contains($"PlacesOrder{count}Display")) count--;
@@ -106,29 +113,19 @@ namespace Ecogy
                 var ofd = new Autodesk.AutoCAD.Windows.OpenFileDialog("Select Google Drive Path", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "*", "Select Spec Sheet(s)", flags);
                 var dr = ofd.ShowDialog();
 
-                string path;
-                if (dr == System.Windows.Forms.DialogResult.OK)
-                {
-                    path = ofd.Filename;
-                }
-                else
+                if (dr != System.Windows.Forms.DialogResult.OK)
                 {
                     return;
                 }
+
+                var path = ofd.Filename;
 
                 dialogs.SetValue(REG_KEY_NAME, path);
 
-                var depthPrompt = new PromptStringOptions("\nAt what depth? ")
-                {
-                    AllowSpaces = false
-                };
+                var depthPrompt = new PromptIntegerOptions("\nAt what depth? ");
 
-                var depthResponse = ed.GetString(depthPrompt);
-                if (!int.TryParse(depthResponse.StringResult, out int depth))
-                {
-                    ed.WriteMessage($"Invalid number: {depthResponse}");
-                    return;
-                }
+                var depthResponse = ed.GetInteger(depthPrompt);
+                var depth = depthResponse.Value;
 
                 dialogs.SetValue(REG_KEY_DEPTH, depth);
 
@@ -136,61 +133,39 @@ namespace Ecogy
             }
         }
 
-        static void Import(string path)
+        private static int PDFPageCount(string fileName)
+        {
+            using (StreamReader sr = new StreamReader(File.OpenRead(fileName)))
+            {
+                Regex regex = new Regex(@"/Type\s*/Page[^s]");
+                MatchCollection matches = regex.Matches(sr.ReadToEnd());
+
+                return matches.Count;
+            }
+        }
+
+        private static void _Import(string path)
         {
             var doc = Application.DocumentManager.MdiActiveDocument;
-            if (doc != null)
+            for (int i = 0; i < PDFPageCount(path); i++)
             {
-                if (File.GetAttributes(path).HasFlag(FileAttributes.Directory))
+                doc.Editor.Command($"-PDFATTACH", path, 1, new Point2d(SpecSheetCount * 11, 0), 1, 0);
+                SpecSheetCount++;
+            }
+        }
+
+        private static void Import(string path)
+        {
+            if (File.GetAttributes(path).HasFlag(FileAttributes.Directory))
+            {
+                foreach (var file in Directory.GetFiles(path))
                 {
-                    foreach (var file in Directory.GetFiles(path))
-                    {
-                        Import(file);
-                    }
+                    Import(file);
                 }
-                else
-                {
-                    var db = doc.Database;
-                    using (var transaction = doc.Database.TransactionManager.StartTransaction())
-                    {
-                        DBDictionary nod = (DBDictionary)transaction.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
-
-                        string defDictKey = UnderlayDefinition.GetDictionaryKey(typeof(PdfDefinition));
-                        if (!nod.Contains(defDictKey))
-                        {
-                            using (DBDictionary dict = new DBDictionary())
-                            {
-                                nod.SetAt(defDictKey, dict);
-                                transaction.AddNewlyCreatedDBObject(dict, true);
-                            }
-                        }
-
-                        ObjectId idPdfDef;
-                        DBDictionary pdfDict = (DBDictionary)transaction.GetObject(nod.GetAt(defDictKey), OpenMode.ForWrite);
-
-                        using (PdfDefinition pdfDef = new PdfDefinition())
-                        {
-                            pdfDef.SourceFileName = path;
-                            idPdfDef = pdfDict.SetAt(Path.GetFileNameWithoutExtension(path), pdfDef);
-                            transaction.AddNewlyCreatedDBObject(pdfDef, true);
-                        }
-
-                        BlockTable bt = (BlockTable)transaction.GetObject(db.BlockTableId, OpenMode.ForRead);
-
-                        BlockTableRecord btr = (BlockTableRecord)transaction.GetObject(
-                            bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite
-                        );
-
-                        using (PdfReference pdf = new PdfReference())
-                        {
-                            pdf.DefinitionId = idPdfDef;
-                            btr.AppendEntity(pdf);
-                            transaction.AddNewlyCreatedDBObject(pdf, true);
-                        }
-
-                        transaction.Commit();
-                    }
-                }
+            }
+            else
+            {
+                _Import(path);
             }
         }
 
@@ -207,12 +182,12 @@ namespace Ecogy
                     Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.AllowMultiple |
                     Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.AllowAnyExtension;
 
-                var ofd = new Autodesk.AutoCAD.Windows.OpenFileDialog("Select Spec Sheet(s)", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "*", "Select Spec Sheet(s)", flags);
+                var openFileDialog = new Autodesk.AutoCAD.Windows.OpenFileDialog("Select Spec Sheet(s)", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "*", "Select Spec Sheet(s)", flags);
 
-                var dr = ofd.ShowDialog();
-                if (dr == System.Windows.Forms.DialogResult.OK)
+                var result = openFileDialog.ShowDialog();
+                if (result == System.Windows.Forms.DialogResult.OK)
                 {
-                    foreach (var file in ofd.GetFilenames())
+                    foreach (var file in openFileDialog.GetFilenames())
                     {
                         Import(file);
                     }
