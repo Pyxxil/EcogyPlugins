@@ -59,13 +59,11 @@ namespace Ecogy
             var count = 0;
             foreach (var key in dialogs.GetValueNames())
             {
+                if (rgx.IsMatch(key)) count++;
+
                 // It's already in there, overwrite it
                 if (dialogs.GetValue(key).ToString() == REG_KEY_NAME) break;
-
-                if (rgx.IsMatch(key)) count++;
             }
-
-            doc.Editor.WriteMessage("Values: {}", string.Join(", ", dialogs.GetValueNames()));
 
             // AutoCad occasionally puts an empty key in
             if (rgx.IsMatch($"PlacesOrder{count}") && !dialogs.GetValueNames().Contains($"PlacesOrder{count}Display")) count--;
@@ -130,7 +128,7 @@ namespace Ecogy
 
                 dialogs.SetValue(REG_KEY_DEPTH, depth);
 
-                AddGoogleDrive();
+                GoogleDrive();
             }
         }
 
