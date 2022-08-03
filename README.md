@@ -29,7 +29,7 @@ and whenever you click on it it will drop you in that folder. This folder does n
 Every project you open will change this path, but the base path and the depth will remain the same -- you can simply rerun
 `AddGoogleDrive` if you would like to change the values.
 
-## Spec Sheet Plugin (Note: Currently does not work)
+## Spec Sheet Plugin
 
 This is an AutoCAD plugin that allows you to import any PDF documents to use as Spec Sheets.
 
@@ -42,6 +42,20 @@ files you would like to import, and they will be added to the project.
 
 This is an AutoCAD plugin that will fillet all Polylines in a drawing.
 
+## Issues
+
+The current implementation on the branch is an attempt to modify some code found on the internet that manually
+creates the FIlLET's using ARC's. This fails in two ways:
+ - Either it errors out while trying to convert the PolyLine2D to a normal PolyLine,
+ - Runs fine, however none of the PolyLine's are modified
+
+I have also tried to use the `doc.Editor.Command("_.FILLET", "r", 1, "p", polyline.ObjectID);` command, however,
+while this runs without any errors, the lines are left unmodified and I'm left at the command prompt wanting me to
+select the polyline to FILLET.
+
+Modifying the line to `doc.Editor.Command("_.FILLET", "r", 1, "p", polyline);`, throws an error about an invalid object.
+
 ### Usage
 
 Simply run the `FilletAll` command, supply the radius, and all of the polylines in your drawing will now be filleted.
+
