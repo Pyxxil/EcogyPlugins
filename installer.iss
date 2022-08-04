@@ -9,7 +9,7 @@ PrivilegesRequired=lowest
 OutputBaseFilename=EcogyPlugins
 Uninstallable=yes
 CreateUninstallRegKey=yes
-VersionInfoVersion=0.0.3
+VersionInfoVersion=0.0.4
 
 [Files]
 Source: "PackageContents.xml"; DestDir: "{userappdata}\Autodesk\ApplicationPlugins\EcogyPlugins.bundle"
