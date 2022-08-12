@@ -13,4 +13,4 @@ VersionInfoVersion=0.0.4
 
 [Files]
 Source: "PackageContents.xml"; DestDir: "{userappdata}\Autodesk\ApplicationPlugins\EcogyPlugins.bundle"
-Source: "bin\Release\EcogyPlugins.dll"; DestDir: "{userappdata}\Autodesk\ApplicationPlugins\EcogyPlugins.bundle\Contents"
+Source: "bin\Release\EcogyPlugins.dll"; DestDir: "{userappdata}\Autodesk\ApplicationPlugins\EcogyPlugins.bundle\Contents"; Flags: replacesameversion
