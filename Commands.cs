@@ -28,7 +28,8 @@ namespace Ecogy
             $@"{HostApplicationServices.Current.UserRegistryProductRootKey}\Profiles\{Application.GetSystemVariable("CPROFILE")}\Dialogs\AllAnavDialogs"
         , true);
 
-        private static readonly Regex rgx = new Regex(@"PlacesOrder\d$", RegexOptions.Compiled);
+        private static readonly Regex rgx = new Regex(@"PlacesOrder(\d+)$", RegexOptions.Compiled);
+        private static readonly Regex deleteRegex = new Regex(@"^PlacesOrder(\d+)", RegexOptions.Compiled);
 
         private static int SpecSheetCount = 0;
 
@@ -56,33 +57,47 @@ namespace Ecogy
                 Directory.CreateDirectory(directory);
             }
 
-            var count = 0;
-            foreach (var key in dialogs.GetValueNames())
-            {
-                if (rgx.IsMatch(key)) count++;
+            var pos = 0;
 
-                // It's already in there, overwrite it
-                if (dialogs.GetValue(key).ToString() == REG_KEY_NAME) break;
+            var entries = dialogs
+                .GetValueNames()
+                .AsEnumerable()
+                .Where(value => rgx.IsMatch(value) && dialogs.GetValue(value).ToString().Length != 0)
+                .Select(value =>
+                {
+                    int position = int.Parse(rgx.Match(value).Groups[1].ToString());
+                    return (
+                        position: pos++,
+                        val: dialogs.GetValue($"PlacesOrder{position}").ToString(),
+                        display: (dialogs.GetValue($"PlacesOrder{position}Display") ?? "").ToString(),
+                        ext: (dialogs.GetValue($"PlacesOrder{position}Ext") ?? "").ToString()
+                    );
+                })
+                .OrderBy(value => value.position)
+                .ToList();
+
+            foreach (var entry in dialogs.GetValueNames().AsEnumerable().Where(entry => deleteRegex.IsMatch(entry)))
+            {
+                dialogs.DeleteValue(entry);
             }
 
-            // AutoCad occasionally puts an empty key in
-            if (rgx.IsMatch($"PlacesOrder{count}") && !dialogs.GetValueNames().Contains($"PlacesOrder{count}Display")) count--;
-
-            dialogs.SetValue($"PlacesOrder{count}", directory);
-            dialogs.SetValue($"PlacesOrder{count}Display", REG_KEY_NAME);
-            dialogs.SetValue($"PlacesOrder{count}Ext", "");
-        }
-
-        public List<string> GetPlaces()
-        {
-            var places = new List<string>();
-
-            foreach (var key in dialogs.GetValueNames())
+            foreach (var (position, val, display, ext) in entries)
             {
-                places.Add(key);
+                dialogs.SetValue($"PlacesOrder{position}", val);
+                dialogs.SetValue($"PlacesOrder{position}Display", display);
+                dialogs.SetValue($"PlacesOrder{position}Ext", ext);
             }
 
-            return places;
+            var match = entries.FindIndex(value => value.display == REG_KEY_NAME);
+
+            var idx = match == -1 ? entries.Count : entries[match].position;
+            var end = match == -1 ? entries.Count + 1 : entries.Count;
+
+            dialogs.SetValue($"PlacesOrder{idx}", directory);
+            dialogs.SetValue($"PlacesOrder{idx}Display", REG_KEY_NAME);
+            dialogs.SetValue($"PlacesOrder{idx}Ext", "");
+
+            dialogs.SetValue($"PlacesOrder{end}", "");
         }
 
         [CommandMethod("Ecogy", "AddGoogleDrive", CommandFlags.Modal)]
@@ -125,19 +140,36 @@ namespace Ecogy
         {
             using (StreamReader sr = new StreamReader(File.OpenRead(fileName)))
             {
-                Regex regex = new Regex(@"/Type\s*/Page[^s]");
-                MatchCollection matches = regex.Matches(sr.ReadToEnd());
+                var regex = new Regex(@"/Type\s*/Page[^s]");
+                var matches = regex.Matches(sr.ReadToEnd());
 
                 return matches.Count;
             }
         }
 
-        private static void _Import(string path, double scale)
+        private static readonly double PDF_WIDTH = 8.2677;
+        private static readonly double PDF_HEIGHT = 11.6929;
+        private static readonly int SHEETS_PER_LINE = 4;
+
+        private static int Min(int a, int b)
+        {
+            return a <= b ? a : b;
+        }
+
+        private static void DoImport(string path, double scale)
         {
             var doc = Application.DocumentManager.MdiActiveDocument;
-            for (int i = 0; i < PDFPageCount(path); i++)
+            for (int i = 0; i < Min(PDFPageCount(path), 2); i++)
             {
-                doc.Editor.Command($"-PDFATTACH", path, 1, new Point2d(SpecSheetCount * 11 * scale, 0), scale, 0);
+                doc.Editor.Command(
+                    $"-PDFATTACH",
+                    path,
+                    i + 1,
+                    new Point2d((SpecSheetCount % SHEETS_PER_LINE) * PDF_WIDTH * scale, (SpecSheetCount / SHEETS_PER_LINE) * -PDF_HEIGHT * scale),
+                    scale,
+                    0
+                );
+
                 SpecSheetCount++;
             }
         }
@@ -153,7 +185,7 @@ namespace Ecogy
             }
             else
             {
-                _Import(path, scale);
+                DoImport(path, scale);
             }
         }
 
@@ -163,9 +195,17 @@ namespace Ecogy
             var doc = Application.DocumentManager.MdiActiveDocument;
             if (doc != null)
             {
+                var ed = doc.Editor;
                 var scalePrompt = new PromptDoubleOptions("\nAt what scale? ");
 
-                var scaleResponse = doc.Editor.GetDouble(scalePrompt);
+                var scaleResponse = ed.GetDouble(scalePrompt);
+
+                if (scaleResponse.Status != PromptStatus.OK)
+                {
+                    ed.WriteMessage("You must supply a valid scale\n");
+                    return;
+                }
+
                 var scale = scaleResponse.Value;
 
                 var flags = Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.DoNotTransferRemoteFiles |
@@ -179,12 +219,104 @@ namespace Ecogy
                 var result = openFileDialog.ShowDialog();
                 if (result == System.Windows.Forms.DialogResult.OK)
                 {
-                    foreach (var file in openFileDialog.GetFilenames())
+                    using (var pm = new ProgressMeter())
                     {
-                        Import(file, scale);
+                        var files = openFileDialog.GetFilenames();
+                        pm.Start("Filleting Polylines");
+                        pm.SetLimit(files.Count());
+
+                        foreach (var file in files)
+                        {
+                            Import(file, scale);
+
+                            pm.MeterProgress();
+                            System.Windows.Forms.Application.DoEvents();
+                        }
+
+                        pm.Stop();
+                        System.Windows.Forms.Application.DoEvents();
                     }
                 }
             }
+        }
+
+        private static ObjectIdCollection GetPolylineEntities(string layerName = null)
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            var ed = doc.Editor;
+            TypedValue[] filter;
+
+            if (!String.IsNullOrEmpty(layerName))
+            {
+                filter = new TypedValue[]{
+                                   new TypedValue((int)DxfCode.Operator,"<and"),
+                                   new TypedValue((int)DxfCode.LayerName,layerName),
+                                   new TypedValue((int)DxfCode.Start,"LWPolyline"),
+                                   new TypedValue((int)DxfCode.Operator,"and>")
+                };
+            }
+            else
+            {
+                filter = new TypedValue[] { new TypedValue((int)DxfCode.Start, "LWPolyline") };
+            }
+
+            // Build a filter list so that only entities
+            // on the specified layer are selected
+
+            var selectionFilter = new SelectionFilter(filter);
+            var promptStatusResult = ed.SelectAll(selectionFilter);
+
+            if (promptStatusResult.Status == PromptStatus.OK)
+                return
+                  new ObjectIdCollection(
+                    promptStatusResult.Value.GetObjectIds()
+                  );
+            else
+                return new ObjectIdCollection();
+        }
+
+
+        [CommandMethod("Ecogy", "FilletAll", CommandFlags.Modal)]
+        public void FilletAll()
+        {
+            var ed = Application.DocumentManager.MdiActiveDocument.Editor;
+            var plineIds = GetPolylineEntities();
+
+            var radiusPrompt = new PromptDoubleOptions("\nWhat radius? ");
+            var radiusResponse = ed.GetDouble(radiusPrompt);
+
+            if (radiusResponse.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("You must supply a valid radius\n");
+                return;
+            }
+
+            // Suppress Command Line noise.
+            var noMutt = Application.GetSystemVariable("NOMUTT");
+            Application.SetSystemVariable("NOMUTT", 1);
+
+            ed.Command("FILLETRAD", 0.5);
+
+            var db = Application.DocumentManager.MdiActiveDocument.Database;
+
+            using (var pm = new ProgressMeter())
+            using (var tr = db.TransactionManager.StartTransaction())
+            {
+                pm.Start("Filleting Polylines");
+                pm.SetLimit(plineIds.Count);
+
+                foreach (ObjectId id in plineIds)
+                {
+                    ed.Command("_.FILLET", "_P", id);
+                    pm.MeterProgress();
+                    System.Windows.Forms.Application.DoEvents();
+                }
+
+                pm.Stop();
+                System.Windows.Forms.Application.DoEvents();
+            }
+
+            Application.SetSystemVariable("NOMUTT", noMutt);
         }
     }
 }
