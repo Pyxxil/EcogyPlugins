@@ -1,14 +1,14 @@
 ﻿using Autodesk.AutoCAD.ApplicationServices;
-using Autodesk.AutoCAD.EditorInput;
-using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.DatabaseServices;
-using System.Collections.Generic;
+using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
+using Autodesk.AutoCAD.Runtime;
 
-using System.Text.RegularExpressions;
 using System.Linq;
+using System.Text.RegularExpressions;
+using iText.Kernel.Pdf;
 using System.IO;
 using System;
-using Autodesk.AutoCAD.Geometry;
 
 // This line is not mandatory, but improves loading performances
 [assembly: CommandClass(typeof(Ecogy.Commands))]
@@ -41,7 +41,7 @@ namespace Ecogy
             var path = dialogs.GetValue(REG_KEY_NAME).ToString();
             var depth = (int)dialogs.GetValue(REG_KEY_DEPTH);
 
-            Document doc = Application.DocumentManager.MdiActiveDocument;
+            var doc = Application.DocumentManager.MdiActiveDocument;
             var documentPath = doc.Database.OriginalFileName;
             var pathPostfix = "";
 
@@ -138,13 +138,9 @@ namespace Ecogy
 
         private static int PDFPageCount(string fileName)
         {
-            using (StreamReader sr = new StreamReader(File.OpenRead(fileName)))
-            {
-                var regex = new Regex(@"/Type\s*/Page[^s]");
-                var matches = regex.Matches(sr.ReadToEnd());
-
-                return matches.Count;
-            }
+            PdfReader reader = new PdfReader(fileName);
+            PdfDocument document = new PdfDocument(reader);
+            return document.GetNumberOfPages();
         }
 
         private static readonly double PDF_WIDTH = 8.2677;
