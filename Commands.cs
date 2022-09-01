@@ -9,6 +9,8 @@ using System.Text.RegularExpressions;
 using iText.Kernel.Pdf;
 using System.IO;
 using System;
+using iText.Kernel.Geom;
+using System.Collections.Generic;
 
 // This line is not mandatory, but improves loading performances
 [assembly: CommandClass(typeof(Ecogy.Commands))]
@@ -182,6 +184,7 @@ namespace Ecogy
             else
             {
                 DoImport(path, scale);
+                return new List<string> { path };
             }
         }
 
@@ -236,19 +239,19 @@ namespace Ecogy
             }
         }
 
-        private static ObjectIdCollection GetPolylineEntities(string layerName = null)
+        private static ObjectIdCollection GetPolylineEntities(string layout = null)
         {
             var doc = Application.DocumentManager.MdiActiveDocument;
             var ed = doc.Editor;
             TypedValue[] filter;
 
-            if (!String.IsNullOrEmpty(layerName))
+            if (!String.IsNullOrEmpty(layout))
             {
                 filter = new TypedValue[]{
-                                   new TypedValue((int)DxfCode.Operator,"<and"),
-                                   new TypedValue((int)DxfCode.LayerName,layerName),
-                                   new TypedValue((int)DxfCode.Start,"LWPolyline"),
-                                   new TypedValue((int)DxfCode.Operator,"and>")
+                    new TypedValue((int)DxfCode.Operator, "<and"),
+                    new TypedValue((int)DxfCode.Start, "LWPolyline"),
+                    new TypedValue((int)DxfCode.LayoutName, layout),
+                    new TypedValue((int)DxfCode.Operator, "and>")
                 };
             }
             else
@@ -257,26 +260,26 @@ namespace Ecogy
             }
 
             // Build a filter list so that only entities
-            // on the specified layer are selected
+            // in the specified layout are selected
 
             var selectionFilter = new SelectionFilter(filter);
             var promptStatusResult = ed.SelectAll(selectionFilter);
 
             if (promptStatusResult.Status == PromptStatus.OK)
-                return
-                  new ObjectIdCollection(
-                    promptStatusResult.Value.GetObjectIds()
-                  );
-            else
-                return new ObjectIdCollection();
+                return new ObjectIdCollection(promptStatusResult.Value.GetObjectIds());
+
+            return new ObjectIdCollection();
         }
 
 
         [CommandMethod("Ecogy", "FilletAll", CommandFlags.Modal)]
         public void FilletAll()
         {
-            var ed = Application.DocumentManager.MdiActiveDocument.Editor;
-            var plineIds = GetPolylineEntities();
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            var db = doc.Database;
+            var ed = doc.Editor;
+
+            var originalLayout = LayoutManager.Current.CurrentLayout;
 
             var radiusPrompt = new PromptDoubleOptions("\nWhat radius? ");
             var radiusResponse = ed.GetDouble(radiusPrompt);
@@ -287,32 +290,54 @@ namespace Ecogy
                 return;
             }
 
-            // Suppress Command Line noise.
-            var noMutt = Application.GetSystemVariable("NOMUTT");
-            Application.SetSystemVariable("NOMUTT", 1);
-
-            ed.Command("FILLETRAD", 0.5);
-
-            var db = Application.DocumentManager.MdiActiveDocument.Database;
-
-            using (var pm = new ProgressMeter())
             using (var tr = db.TransactionManager.StartTransaction())
             {
-                pm.Start("Filleting Polylines");
-                pm.SetLimit(plineIds.Count);
+                var lays = tr.GetObject(db.LayoutDictionaryId,
+                        OpenMode.ForRead) as DBDictionary;
 
-                foreach (ObjectId id in plineIds)
+                doc.Editor.WriteMessage("\nLayouts:");
+
+                // Step through and list each named layout and Model
+                foreach (DBDictionaryEntry item in lays)
                 {
-                    ed.Command("_.FILLET", "_P", id);
-                    pm.MeterProgress();
-                    System.Windows.Forms.Application.DoEvents();
-                }
+                    doc.Editor.WriteMessage("\n  " + item.Key);
+                    var collection = GetPolylineEntities(item.Key);
+                    doc.Editor.WriteMessage($"    > Has {collection.Count} Polylines");
 
-                pm.Stop();
-                System.Windows.Forms.Application.DoEvents();
+                    if (collection.Count > 0)
+                    {
+                        var noMutt = Application.GetSystemVariable("NOMUTT");
+                        Application.SetSystemVariable("NOMUTT", 1);
+
+                        ed.Command("FILLETRAD", 0.5);
+
+                        using (var pm = new ProgressMeter())
+                        using (doc.LockDocument())
+                        {
+                            LayoutManager.Current.CurrentLayout = item.Key;
+                            pm.Start("Filleting Polylines");
+                            pm.SetLimit(collection.Count);
+
+                            foreach (ObjectId id in collection)
+                            {
+                                ed.Command("_.FILLET", "_P", id);
+                                pm.MeterProgress();
+                                System.Windows.Forms.Application.DoEvents();
+                            }
+
+                            pm.Stop();
+                            System.Windows.Forms.Application.DoEvents();
+                        }
+
+                        Application.SetSystemVariable("NOMUTT", noMutt);
+                    }
+                }
             }
 
-            Application.SetSystemVariable("NOMUTT", noMutt);
+            using (doc.LockDocument())
+            {
+                LayoutManager.Current.CurrentLayout = originalLayout;
+            }
         }
     }
 }
