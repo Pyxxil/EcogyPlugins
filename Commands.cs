@@ -184,7 +184,6 @@ namespace Ecogy
             else
             {
                 DoImport(path, scale);
-                return new List<string> { path };
             }
         }
 
