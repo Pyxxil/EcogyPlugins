@@ -35,5 +35,14 @@ This is an AutoCAD plugin that allows you to import any PDF documents to use as 
 
 ### Usage
 
-Simply run the `ImportSpecSheet` command in the AutoCAD command line. A file selection dialog will appear, select all PDF
+Simply run the `ImportSpecSheet` command in the AutoCAD command line. You will need to supply the scale at which you want
+the PDF's to be imported at, after which a file selection dialog will appear, select all PDF
 files you would like to import, and they will be added to the project.
+
+## Fillet Plugin
+
+This is an AutoCAD plugin that will fillet all Polylines on a provided layer with a supplied radius.
+
+### Usage
+
+Simply run the `FilletAll` plugin. You will be asked to supply a radius, as well as the Layer you would like to fillet.
