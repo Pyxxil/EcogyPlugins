@@ -138,52 +138,26 @@ namespace Ecogy
             }
         }
 
-        private static int PDFPageCount(string fileName)
-        {
-            PdfReader reader = new PdfReader(fileName);
-            PdfDocument document = new PdfDocument(reader);
-            return document.GetNumberOfPages();
-        }
-
-        private static readonly double PDF_WIDTH = 8.2677;
-        private static readonly double PDF_HEIGHT = 11.6929;
+        private static readonly double X_OFFSET = 0;
+        private static readonly double Y_OFFSET = 0;
         private static readonly int SHEETS_PER_LINE = 4;
+        private static readonly double PIXELS_PER_INCH = 72;
 
-        private static int Min(int a, int b)
-        {
-            return a <= b ? a : b;
-        }
-
-        private static void DoImport(string path, double scale)
-        {
-            var doc = Application.DocumentManager.MdiActiveDocument;
-            for (int i = 0; i < Min(PDFPageCount(path), 2); i++)
-            {
-                doc.Editor.Command(
-                    $"-PDFATTACH",
-                    path,
-                    i + 1,
-                    new Point2d((SpecSheetCount % SHEETS_PER_LINE) * PDF_WIDTH * scale, (SpecSheetCount / SHEETS_PER_LINE) * -PDF_HEIGHT * scale),
-                    scale,
-                    0
-                );
-
-                SpecSheetCount++;
-            }
-        }
-
-        private static void Import(string path, double scale)
+        private static List<string> Import(string path, double scale)
         {
             if (File.GetAttributes(path).HasFlag(FileAttributes.Directory))
             {
+                var pdfs = new List<string>();
                 foreach (var file in Directory.GetFiles(path))
                 {
-                    Import(file, scale);
+                    pdfs.AddRange(Import(file, scale));
                 }
+
+                return pdfs;
             }
             else
             {
-                DoImport(path, scale);
+                return new List<string> { path };
             }
         }
 
@@ -204,6 +178,9 @@ namespace Ecogy
                     return;
                 }
 
+                var noMutt = Application.GetSystemVariable("NOMUTT");
+                Application.SetSystemVariable("NOMUTT", 1);
+
                 var scale = scaleResponse.Value;
 
                 var flags = Autodesk.AutoCAD.Windows.OpenFileDialog.OpenFileDialogFlags.DoNotTransferRemoteFiles |
@@ -217,39 +194,87 @@ namespace Ecogy
                 var result = openFileDialog.ShowDialog();
                 if (result == System.Windows.Forms.DialogResult.OK)
                 {
-                    using (var pm = new ProgressMeter())
+                    var pdfs = new List<string>();
+                    var files = openFileDialog.GetFilenames();
+
+                    foreach (var file in files)
                     {
-                        var files = openFileDialog.GetFilenames();
-                        pm.Start("Filleting Polylines");
-                        pm.SetLimit(files.Count());
+                        pdfs.AddRange(Import(file, scale));
+                    }
 
-                        foreach (var file in files)
+                    var pages = new List<(string, int)>();
+                    foreach (var pdf in pdfs)
+                    {
+                        PdfReader reader = new PdfReader(pdf);
+                        PdfDocument document = new PdfDocument(reader);
+                        var pageCount = document.GetNumberOfPages();
+
+                        for (var page = 0; page < pageCount; page++)
                         {
-                            Import(file, scale);
-
-                            pm.MeterProgress();
-                            System.Windows.Forms.Application.DoEvents();
+                            pages.Add((pdf, page + 1));
                         }
+                    }
 
-                        pm.Stop();
-                        System.Windows.Forms.Application.DoEvents();
+                    var y_offsets = new List<double>();
+                    for (var i = 0; i < pages.Count; i++)
+                    {
+                        var x_offset = 0.0;
+
+                        for (var j = 0; j < SHEETS_PER_LINE; j++)
+                        {
+                            if ((i * SHEETS_PER_LINE + j) >= pages.Count())
+                            {
+                                break;
+                            }
+
+                            var (pdf, page) = pages[i * SHEETS_PER_LINE + j];
+                            PdfReader reader = new PdfReader(pdf);
+                            PdfDocument document = new PdfDocument(reader);
+
+                            Rectangle rectangle = document.GetPage(page).GetPageSize();
+
+                            if (y_offsets.Count <= j)
+                            {
+                                y_offsets.Add(0.0);
+                            }
+                            else
+                            {
+                                y_offsets[j] += rectangle.GetHeight() / PIXELS_PER_INCH * scale;
+                            }
+
+                            doc.Editor.Command(
+                                $"-PDFATTACH",
+                                pdf,
+                                page,
+                                new Point2d(
+                                    X_OFFSET + x_offset,
+                                    Y_OFFSET - y_offsets[j]
+                                ),
+                                scale,
+                                0
+                            );
+
+                            x_offset += rectangle.GetWidth() / PIXELS_PER_INCH * scale;
+                        }
                     }
                 }
+
+                Application.SetSystemVariable("NOMUTT", noMutt);
             }
         }
 
-        private static ObjectIdCollection GetPolylineEntities(string layout = null)
+        private static ObjectIdCollection GetPolylineEntities(string layer = null)
         {
             var doc = Application.DocumentManager.MdiActiveDocument;
             var ed = doc.Editor;
             TypedValue[] filter;
 
-            if (!String.IsNullOrEmpty(layout))
+            if (!String.IsNullOrEmpty(layer))
             {
                 filter = new TypedValue[]{
                     new TypedValue((int)DxfCode.Operator, "<and"),
                     new TypedValue((int)DxfCode.Start, "LWPolyline"),
-                    new TypedValue((int)DxfCode.LayoutName, layout),
+                    new TypedValue((int)DxfCode.LayerName, layer),
                     new TypedValue((int)DxfCode.Operator, "and>")
                 };
             }
@@ -257,9 +282,6 @@ namespace Ecogy
             {
                 filter = new TypedValue[] { new TypedValue((int)DxfCode.Start, "LWPolyline") };
             }
-
-            // Build a filter list so that only entities
-            // in the specified layout are selected
 
             var selectionFilter = new SelectionFilter(filter);
             var promptStatusResult = ed.SelectAll(selectionFilter);
@@ -278,65 +300,56 @@ namespace Ecogy
             var db = doc.Database;
             var ed = doc.Editor;
 
-            var originalLayout = LayoutManager.Current.CurrentLayout;
-
             var radiusPrompt = new PromptDoubleOptions("\nWhat radius? ");
             var radiusResponse = ed.GetDouble(radiusPrompt);
+
+            var layerPrompt = new PromptKeywordOptions("\nOn what Layer? ");
+            using (Transaction tr = db.TransactionManager.StartOpenCloseTransaction())
+            {
+                LayerTable lt = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
+                foreach (ObjectId layerId in lt)
+                {
+                    var layer = tr.GetObject(layerId, OpenMode.ForWrite) as LayerTableRecord;
+                    layerPrompt.Keywords.Add(layer.Name);
+                }
+            }
+            layerPrompt.Keywords.Default = "PV-string";
+
+            var lay = ed.GetKeywords(layerPrompt);
 
             if (radiusResponse.Status != PromptStatus.OK)
             {
                 ed.WriteMessage("You must supply a valid radius\n");
                 return;
             }
-
-            using (var tr = db.TransactionManager.StartTransaction())
+            else if (lay.Status != PromptStatus.OK)
             {
-                var lays = tr.GetObject(db.LayoutDictionaryId,
-                        OpenMode.ForRead) as DBDictionary;
+                ed.WriteMessage("You must select one of the layers\n");
+                return;
+            }
 
-                doc.Editor.WriteMessage("\nLayouts:");
+            var noMutt = Application.GetSystemVariable("NOMUTT");
+            Application.SetSystemVariable("NOMUTT", 1);
 
-                // Step through and list each named layout and Model
-                foreach (DBDictionaryEntry item in lays)
+            ed.Command("FILLETRAD", 0.5);
+
+            using (var pm = new ProgressMeter())
+            {
+                pm.Start("Filleting Polylines");
+
+                var collection = GetPolylineEntities(lay.StringResult);
+                foreach (ObjectId id in collection)
                 {
-                    doc.Editor.WriteMessage("\n  " + item.Key);
-                    var collection = GetPolylineEntities(item.Key);
-                    doc.Editor.WriteMessage($"    > Has {collection.Count} Polylines");
-
-                    if (collection.Count > 0)
-                    {
-                        var noMutt = Application.GetSystemVariable("NOMUTT");
-                        Application.SetSystemVariable("NOMUTT", 1);
-
-                        ed.Command("FILLETRAD", 0.5);
-
-                        using (var pm = new ProgressMeter())
-                        using (doc.LockDocument())
-                        {
-                            LayoutManager.Current.CurrentLayout = item.Key;
-                            pm.Start("Filleting Polylines");
-                            pm.SetLimit(collection.Count);
-
-                            foreach (ObjectId id in collection)
-                            {
-                                ed.Command("_.FILLET", "_P", id);
-                                pm.MeterProgress();
-                                System.Windows.Forms.Application.DoEvents();
-                            }
-
-                            pm.Stop();
-                            System.Windows.Forms.Application.DoEvents();
-                        }
-
-                        Application.SetSystemVariable("NOMUTT", noMutt);
-                    }
+                    ed.Command("_.FILLET", "_P", id);
+                    pm.MeterProgress();
+                    System.Windows.Forms.Application.DoEvents();
                 }
+
+                pm.Stop();
+                System.Windows.Forms.Application.DoEvents();
             }
 
-            using (doc.LockDocument())
-            {
-                LayoutManager.Current.CurrentLayout = originalLayout;
-            }
+            Application.SetSystemVariable("NOMUTT", noMutt);
         }
     }
 }
