@@ -331,7 +331,7 @@ namespace Ecogy
             var noMutt = Application.GetSystemVariable("NOMUTT");
             Application.SetSystemVariable("NOMUTT", 1);
 
-            ed.Command("FILLETRAD", 0.5);
+            ed.Command("FILLETRAD", radiusResponse.Value);
 
             using (var pm = new ProgressMeter())
             {
