@@ -49,6 +49,8 @@ namespace Ecogy
 
             for (int i = 0; i < depth; i++)
             {
+                if (!Directory.GetParent(documentPath).Exists) return;
+
                 documentPath = Directory.GetParent(documentPath).ToString();
                 pathPostfix = new DirectoryInfo(documentPath).Name + @"\" + pathPostfix;
             }
