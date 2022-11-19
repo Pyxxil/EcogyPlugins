@@ -46,3 +46,13 @@ This is an AutoCAD plugin that will fillet all Polylines on a provided layer wit
 ### Usage
 
 Simply run the `FilletAll` plugin. You will be asked to supply a radius, as well as the Layer you would like to fillet.
+
+## Import Coordinates Command
+
+This command, `ImportAt`, allows the user to specify at what coordinates they would like to have any imported spec sheets
+to be import at.
+
+### Usage
+
+Simply run the `ImportAt` command, specify the coordinates, and then the coordinates will be used for each spec sheet you
+import thereafter

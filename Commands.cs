@@ -26,14 +26,18 @@ namespace Ecogy
         private static readonly string REG_KEY_NAME = "Google Drive";
         private static readonly string REG_KEY_DEPTH = "Google Drive Depth";
 
+        private static readonly string REG_KEY_X_OFFSET = "X OFFSET";
+        private static readonly string REG_KEY_Y_OFFSET = "Y OFFSET";
+
+        private static readonly RegistryKey variables = Registry.CurrentUser.OpenSubKey(
+            $@"{HostApplicationServices.Current.UserRegistryProductRootKey}\Profiles\{Application.GetSystemVariable("CPROFILE")}", true);
+
         private static readonly RegistryKey dialogs = Registry.CurrentUser.OpenSubKey(
             $@"{HostApplicationServices.Current.UserRegistryProductRootKey}\Profiles\{Application.GetSystemVariable("CPROFILE")}\Dialogs\AllAnavDialogs"
         , true);
 
         private static readonly Regex rgx = new Regex(@"PlacesOrder(\d+)$", RegexOptions.Compiled);
         private static readonly Regex deleteRegex = new Regex(@"^PlacesOrder(\d+)", RegexOptions.Compiled);
-
-        private static int SpecSheetCount = 0;
 
         public static void GoogleDrive()
         {
@@ -140,10 +144,24 @@ namespace Ecogy
             }
         }
 
-        private static readonly double X_OFFSET = 0;
-        private static readonly double Y_OFFSET = 0;
         private static readonly int SHEETS_PER_LINE = 4;
         private static readonly double PIXELS_PER_INCH = 72;
+
+        [CommandMethod("Ecogy", "ImportAt", CommandFlags.Modal)]
+        public void ImportAt()
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            if (doc != null)
+            {
+                var ed = doc.Editor;
+
+                var prompt = new PromptPointOptions("\nWhat Coordinates would you like to import at? ");
+                var point = ed.GetPoint(prompt).Value;
+
+                variables.SetValue(REG_KEY_X_OFFSET, point.X.ToString());
+                variables.SetValue(REG_KEY_Y_OFFSET, point.Y.ToString());
+            }
+        }
 
         private static List<string> Import(string path, double scale)
         {
@@ -170,6 +188,10 @@ namespace Ecogy
             if (doc != null)
             {
                 var ed = doc.Editor;
+
+                var X_OFFSET = double.Parse((string)(variables.GetValue(REG_KEY_X_OFFSET) ?? "0"));
+                var Y_OFFSET = double.Parse((string)(variables.GetValue(REG_KEY_Y_OFFSET) ?? "0"));
+
                 var scalePrompt = new PromptDoubleOptions("\nAt what scale? ");
 
                 var scaleResponse = ed.GetDouble(scalePrompt);
